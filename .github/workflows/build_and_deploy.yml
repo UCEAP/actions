@@ -50,8 +50,6 @@ jobs:
         run: composer -n ci-compile-theme
       - name: Build geosearch for deployment
         run: composer -n ci-compile-geosearch
-      - name: Build docs for deployment
-        run: composer -n compile-docs
       - name: Remove files that should not be deployed
         run: |
           sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
