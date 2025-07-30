@@ -6,8 +6,8 @@ on:
         description: 'The Pantheon site to deploy to'
         required: true
         type: string
-      OP_SECRETS_VAULT:
-        description: '1Password vault containing secrets'
+      OP_VAULT:
+        description: '1Password vault containing project-specific secrets'
         required: true
         type: string
       JIRA_EMAIL:
@@ -218,8 +218,8 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           JIRA_API_TOKEN: op://secrets-shared/atlassian-api/credential
-          SSH_PRIVATE_KEY: op://${{ inputs.OP_SECRETS_VAULT }}/pantheon-ssh/private key
-          TERMINUS_TOKEN: op://${{ inputs.OP_SECRETS_VAULT }}/pantheon-terminus/credential
+          SSH_PRIVATE_KEY: op://${{ inputs.OP_VAULT }}/pantheon-ssh/private key
+          TERMINUS_TOKEN: op://${{ inputs.OP_VAULT }}/pantheon-terminus/credential
       - name: Create Pantheon environment
         env:
           JIRA_PROJECT_KEY: ${{ inputs.JIRA_PROJECT_KEY }}
@@ -265,8 +265,8 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          TERMINUS_TOKEN: op://${{ inputs.OP_SECRETS_VAULT }}/pantheon-terminus/credential
-          SSH_PRIVATE_KEY: op://${{ inputs.OP_SECRETS_VAULT }}/pantheon-ssh/private key
+          TERMINUS_TOKEN: op://${{ inputs.OP_VAULT }}/pantheon-terminus/credential
+          SSH_PRIVATE_KEY: op://${{ inputs.OP_VAULT }}/pantheon-ssh/private key
       - name: deploy to Pantheon
         env:
           TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
