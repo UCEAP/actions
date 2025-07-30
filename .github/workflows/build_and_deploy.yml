@@ -51,8 +51,8 @@ jobs:
         run: composer -n install --no-dev --optimize-autoloader
       - name: Build theme for deployment
         run: composer -n ci-compile-theme
-      - name: Build geosearch for deployment
-        run: composer -n ci-compile-geosearch
+      - name: Build React app(s) for deployment
+        run: composer -n ci-compile-react
       - name: Remove files that should not be deployed
         run: |
           sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
