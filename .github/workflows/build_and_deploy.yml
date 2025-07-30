@@ -1,0 +1,283 @@
+name: Build and deploy
+on:
+  workflow_call:
+    inputs:
+      JIRA_EMAIL:
+        description: 'The email address for Jira API authentication'
+        required: true
+        type: string
+      JIRA_PROJECT_KEY:
+        description: 'The Jira project key for the site'
+        required: true
+        type: string
+      TERMINUS_SITE:
+        description: 'The Pantheon site to deploy to'
+        required: true
+        type: string
+    outputs:
+      TERMINUS_ENV:
+        description: 'The Pantheon environment to deploy to'
+        value: ${{ jobs.prepare_pantheon.outputs.terminus_env }}
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN:
+        required: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+env:
+  TZ: "/usr/share/zoneinfo/America/Los_Angeles"
+  CI_BRANCH: ${{ github.head_ref || github.ref_name }}
+  BASE_BRANCH: ${{ github.base_ref }}
+
+jobs:
+  build_deployment:
+    name: Build for deployment
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    if: github.head_ref != 'qa' && github.head_ref != 'master'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - name: Build project for deployment
+        run: composer -n install --no-dev --optimize-autoloader
+      - name: Build theme for deployment
+        run: composer -n ci-compile-theme
+      - name: Build geosearch for deployment
+        run: composer -n ci-compile-geosearch
+      - name: Build docs for deployment
+        run: composer -n compile-docs
+      - name: Remove files that should not be deployed
+        run: |
+          sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+          git ls-files -X ../deploy.gitignore -oi | xargs rm -rf
+          find . -name .git -exec rm -rf {} +
+          cp ../deploy.gitignore .gitignore
+      - name: Upload deployment build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          path: .
+          name: deployment-build
+          include-hidden-files: true
+          retention-days: 1
+
+  build_dev:
+    name: Build for development
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    if: github.head_ref != 'qa' && github.head_ref != 'master'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - name: Prep for build
+        run: composer -n dev-initialize-local
+      - name: Build project for development
+        run: composer -n install
+      - name: Upload dev build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          path: .
+          name: dev-build
+          include-hidden-files: true
+          retention-days: 1
+
+  lint:
+    name: Check lint
+    needs: [build_dev]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-build
+      # TODO think about using tar for our artifacts: https://github.com/actions/upload-artifact?tab=readme-ov-file#permission-loss
+      - name: Fix file modes
+        run: chmod +x ./vendor/bin/*
+      - name: PHP lint project custom modules and theme
+        run: composer -n lint-parallel
+
+  coding_standards:
+    name: Coding standards
+    needs: [build_dev]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-build
+      - name: Fix file modes
+        run: chmod +x ./vendor/bin/*
+      - name: Fix dubious ownership error
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+      - name: Check PHP coding standards for project custom modules and theme
+        run: |
+          if [ -n "$BASE_BRANCH" ]; then
+            if ! git diff --quiet --diff-filter=d origin/$BASE_BRANCH... -- '*.php' '*.module' '*.inc' '*.install' '*.test' '*.profile' '*.theme' '*.info'; then
+              composer -n code-sniff-feature
+            else
+              echo "No changes to relevant files."
+            fi
+          else
+            composer -n code-sniff
+          fi
+
+  static_analysis:
+    name: Static analysis
+    needs: [build_dev]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-build
+      - name: Fix file modes
+        run: chmod +x ./vendor/bin/*
+      - name: Fix dubious ownership error
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+      - name: Run static analysis on custom modules and theme
+        run: |
+          if [ -n "$BASE_BRANCH" ]; then
+            if ! git diff --quiet --diff-filter=d origin/$BASE_BRANCH... -- '*.php' '*.module' '*.inc' '*.install' '*.test' '*.profile' '*.theme' '*.info'; then
+              composer -n static-analysis-feature
+            else
+              echo "No changes to relevant files."
+            fi
+          else
+            composer -n static-analysis
+          fi
+
+  unit_test:
+    name: Unit tests
+    needs: [build_dev]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-build
+      - name: Fix file modes
+        run: chmod +x ./vendor/bin/*
+      - name: run acceptance tests with php-unit
+        run: composer -n unit-test-ci
+      - name: Upload artifacts
+        if: ${{ false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-report
+          path: ./tests/artifacts/coverage
+
+  prepare_pantheon:
+    name: Prepare Pantheon
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    outputs:
+      terminus_env: ${{ steps.determine_pantheon_env.outputs.terminus_env }}
+    if: github.head_ref != 'qa' && github.head_ref != 'master' && github.actor != 'dependabot[bot]'
+    steps:
+      - name: Determine Pantheon environment
+        id: determine_pantheon_env
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            case "$CI_BRANCH" in
+              master) export TERMINUS_ENV=dev ;;
+              qa) export TERMINUS_ENV=qa ;;
+              *) exit 1 ;; # we should never get here
+            esac
+          else
+            export TERMINUS_ENV=pr-$PR_NUMBER
+          fi
+          echo TERMINUS_ENV=$TERMINUS_ENV >> $GITHUB_ENV
+          echo terminus_env=$TERMINUS_ENV >> $GITHUB_OUTPUT
+
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          JIRA_API_TOKEN: op://secrets-shared/atlassian-api/credential
+          SSH_PRIVATE_KEY: op://secrets-myeap2/pantheon-ssh/private key
+          TERMINUS_TOKEN: op://secrets-myeap2/pantheon-terminus/credential
+      - name: Create Pantheon environment
+        env:
+          JIRA_PROJECT_KEY: ${{ inputs.JIRA_PROJECT_KEY }}
+          JIRA_EMAIL: ${{ inputs.JIRA_EMAIL }}
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+        run: |
+          terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
+          set +e
+          terminus -n env:info --quiet; PANTHEON_SITE_EXISTS=$((!$?))
+          set -e
+          if [ $PANTHEON_SITE_EXISTS -eq 0 ]; then
+            terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
+            CI_BRANCH_UPPERCASE=$(echo $CI_BRANCH | tr '[:lower:]' '[:upper:]')
+            if [[ $CI_BRANCH_UPPERCASE =~ (${JIRA_PROJECT_KEY}-[0-9]+) ]]; then
+              JIRA_TICKET=${BASH_REMATCH[1]}
+              curl --request POST \
+                --url "https://uceapit.atlassian.net/rest/api/2/issue/$JIRA_TICKET/comment" \
+                --user "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+                --header 'Accept: application/json' \
+                --header 'Content-Type: application/json' \
+                --data '{"body": "Created feature testing environment at https://'$TERMINUS_ENV'-'$TERMINUS_SITE'.pantheonsite.io/"}'
+            else
+              echo "Could not determine Jira ticket ID from branch name $CI_BRANCH"
+            fi
+          fi
+
+  deploy_to_pantheon:
+    name: Deploy to Pantheon
+    needs: [build_deployment, prepare_pantheon]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-build
+      - name: Fix file modes
+        run: find scripts vendor/bin -type f | xargs chmod +x
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          TERMINUS_TOKEN: op://secrets-myeap2/pantheon-terminus/credential
+          SSH_PRIVATE_KEY: op://secrets-myeap2/pantheon-ssh/private key
+      - name: deploy to Pantheon
+        env:
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+          TERMINUS_ENV: ${{ needs.prepare_pantheon.outputs.terminus_env }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > ../private.key
+          chmod 600 ../private.key
+          eval `ssh-agent -s`
+          ssh-add ../private.key
+          if [ $TERMINUS_ENV == "dev" ]; then
+            uceap deploy-to-dev
+          else
+            uceap deploy-to-multidev
+          fi
+

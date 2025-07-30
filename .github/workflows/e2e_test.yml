@@ -1,0 +1,50 @@
+name: End-to-end test
+on:
+  workflow_call:
+    inputs:
+      TERMINUS_SITE:
+        description: 'The Pantheon site to run tests against'
+        required: true
+        type: string
+      TERMINUS_ENV:
+        description: 'The site environment to run tests against'
+        required: true
+        type: string
+      CYPRESS_PROJECT_ID:
+        description: 'Cypress project ID for recording tests'
+        required: true
+        type: string
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN:
+        required: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CI_BRANCH: ${{ github.head_ref || github.ref_name }}
+  BASE_BRANCH: ${{ github.base_ref }}
+
+jobs:
+  e2e_test:
+    name: Feature tests
+    runs-on: ubuntu-latest
+    if: ${{ github.actor != 'dependabot[bot]' && github.ref_name != 'master' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CYPRESS_RECORD_KEY: op://secrets-myeap2/cypress-record-key/notesPlain
+      - name: Run Cypress
+        uses: cypress-io/github-action@v6
+        with:
+          working-directory: tests
+          config: baseUrl=https://${{ inputs.TERMINUS_ENV }}-${{ inputs.TERMINUS_SITE }}.pantheonsite.io
+          record: true
+        env:
+          CYPRESS_PROJECT_ID: ${{ inputs.CYPRESS_PROJECT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
