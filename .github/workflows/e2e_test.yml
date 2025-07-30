@@ -14,6 +14,10 @@ on:
         description: 'Cypress project ID for recording tests'
         required: true
         type: string
+      OP_SECRETS_VAULT:
+        description: '1Password vault containing secrets'
+        required: true
+        type: string
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: true
@@ -38,7 +42,7 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CYPRESS_RECORD_KEY: op://secrets-myeap2/cypress-record-key/notesPlain
+          CYPRESS_RECORD_KEY: op://${{ inputs.OP_SECRETS_VAULT }}/cypress-record-key/notesPlain
       - name: Run Cypress
         uses: cypress-io/github-action@v6
         with:
