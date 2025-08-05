@@ -53,6 +53,8 @@ jobs:
         run: composer -n ci-compile-theme
       - name: Build React app(s) for deployment
         run: composer -n ci-compile-react
+      - name: Build docs for deployment
+        run: composer -n ci-compile-docs
       - name: Remove files that should not be deployed
         run: |
           sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
