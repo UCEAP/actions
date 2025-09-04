@@ -232,18 +232,6 @@ jobs:
           set -e
           if [ $PANTHEON_SITE_EXISTS -eq 0 ]; then
             terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
-            CI_BRANCH_UPPERCASE=$(echo $CI_BRANCH | tr '[:lower:]' '[:upper:]')
-            if [[ $CI_BRANCH_UPPERCASE =~ (${JIRA_PROJECT_KEY}-[0-9]+) ]]; then
-              JIRA_TICKET=${BASH_REMATCH[1]}
-              curl --request POST \
-                --url "https://uceapit.atlassian.net/rest/api/2/issue/$JIRA_TICKET/comment" \
-                --user "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-                --header 'Accept: application/json' \
-                --header 'Content-Type: application/json' \
-                --data '{"body": "Created feature testing environment at https://'$TERMINUS_ENV'-'$TERMINUS_SITE'.pantheonsite.io/"}'
-            else
-              echo "Could not determine Jira ticket ID from branch name $CI_BRANCH"
-            fi
           fi
 
   deploy_to_pantheon:
