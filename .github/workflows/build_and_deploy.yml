@@ -193,15 +193,15 @@ jobs:
     outputs:
       terminus_env: ${{ steps.determine_pantheon_env.outputs.terminus_env }}
     if: github.head_ref != 'qa' && github.head_ref != 'master' && github.actor != 'dependabot[bot]'
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: Determine Pantheon environment
         id: determine_pantheon_env
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ -z "$PR_NUMBER" ]; then
             case "$CI_BRANCH" in
-              master) export TERMINUS_ENV=dev ;;
+              main|master) export TERMINUS_ENV=dev ;;
               qa) export TERMINUS_ENV=qa ;;
               *) exit 1 ;; # we should never get here
             esac
@@ -232,6 +232,11 @@ jobs:
           set -e
           if [ $PANTHEON_SITE_EXISTS -eq 0 ]; then
             terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
+            curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              --request POST \
+              --data '{"body": "Created feature testing environment at https://'$TERMINUS_ENV'-'$TERMINUS_SITE'.pantheonsite.io/"}' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/$PR_NUMBER/comments"
           fi
 
   deploy_to_pantheon:
