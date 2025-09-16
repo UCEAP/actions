@@ -29,6 +29,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 permissions:
   contents: read
+  pull-requests: write
 defaults:
   run:
     shell: bash
