@@ -29,7 +29,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 permissions:
   contents: read
-  pull-requests: write
 defaults:
   run:
     shell: bash
@@ -237,8 +236,8 @@ jobs:
           set -e
           if [ $PANTHEON_SITE_EXISTS -eq 0 ]; then
             terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
-            curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
+            curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
               --request POST \
               --data '{"body": "Created feature testing environment at https://'$TERMINUS_ENV'-'$TERMINUS_SITE'.pantheonsite.io/"}' \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/$PR_NUMBER/comments"
