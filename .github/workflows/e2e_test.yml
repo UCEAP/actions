@@ -29,8 +29,70 @@ env:
   BASE_BRANCH: ${{ github.base_ref }}
 
 jobs:
+  prepare_pantheon:
+    name: Prepare Pantheon
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SSH_PRIVATE_KEY: op://${{ inputs.OP_VAULT }}/pantheon-ssh/private key
+          TERMINUS_TOKEN: op://${{ inputs.OP_VAULT }}/pantheon-terminus/credential
+      - name: Create Pantheon environment
+        env:
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+          TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
+        run: |
+          terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
+          set +e
+          terminus -n env:info --quiet; PANTHEON_SITE_EXISTS=$((!$?))
+          set -e
+          if [ $PANTHEON_SITE_EXISTS -ne 0 ]; then
+            terminus -n env:delete --yes
+          fi
+          terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
+          terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
+
+  deploy_to_pantheon:
+    name: Deploy to Pantheon
+    needs: prepare_pantheon
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-build
+      - name: Fix file modes
+        run: find scripts vendor/bin -type f | xargs chmod +x
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          TERMINUS_TOKEN: op://${{ inputs.OP_VAULT }}/pantheon-terminus/credential
+          SSH_PRIVATE_KEY: op://${{ inputs.OP_VAULT }}/pantheon-ssh/private key
+      - name: deploy to Pantheon
+        env:
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+          TERMINUS_ENV: ${{ needs.prepare_pantheon.outputs.terminus_env }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > ../private.key
+          chmod 600 ../private.key
+          eval `ssh-agent -s`
+          ssh-add ../private.key
+          uceap deploy-to-multidev
+
   e2e_test:
     name: Feature tests
+    needs: deploy_to_pantheon
     runs-on: ubuntu-latest
     if: ${{ github.actor != 'dependabot[bot]' && github.ref_name != 'master' }}
     steps:
@@ -52,3 +114,25 @@ jobs:
         env:
           CYPRESS_PROJECT_ID: ${{ inputs.CYPRESS_PROJECT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup_pantheon:
+    name: Cleanup Pantheon
+    needs: e2e_test
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/uceap/devcontainer-drupal:main
+    steps:
+      - name: Load secrets
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          TERMINUS_TOKEN: op://${{ inputs.OP_VAULT }}/pantheon-terminus/credential
+      - name: Delete Pantheon environment
+        env:
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+          TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
+        run: |
+          terminus -n env:delete --yes
+
