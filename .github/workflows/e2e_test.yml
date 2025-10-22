@@ -134,5 +134,6 @@ jobs:
           TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
           TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
         run: |
+          terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
           terminus -n env:delete --yes
 
