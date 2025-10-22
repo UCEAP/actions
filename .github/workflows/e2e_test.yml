@@ -82,7 +82,7 @@ jobs:
       - name: deploy to Pantheon
         env:
           TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
-          TERMINUS_ENV: ${{ needs.prepare_pantheon.outputs.terminus_env }}
+          TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
         run: |
           echo "$SSH_PRIVATE_KEY" > ../private.key
           chmod 600 ../private.key
