@@ -118,6 +118,13 @@ jobs:
   cleanup_pantheon:
     name: Cleanup Pantheon
     needs: e2e_test
+    # Always tear the multidev down, even when the tests fail. Otherwise the
+    # multidev is left standing with data mutated by the failed run, and a
+    # subsequent "re-run failed jobs" reuses that dirty database (prepare/deploy
+    # do not re-run), causing confusing follow-on failures. Making the multidev
+    # ephemeral per run forces "re-run all jobs" (which reseeds via
+    # prepare_pantheon) and eliminates the dirty-reuse footgun.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/uceap/devcontainer-drupal:main
@@ -135,5 +142,13 @@ jobs:
           TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
         run: |
           terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
-          terminus -n env:delete --yes
+          # Guard the delete: with `if: always()` this job also runs when
+          # prepare_pantheon failed and never created the multidev, in which
+          # case env:delete would error and turn cleanup red for no reason.
+          set +e
+          terminus -n env:info --quiet; PANTHEON_SITE_EXISTS=$((!$?))
+          set -e
+          if [ $PANTHEON_SITE_EXISTS -ne 0 ]; then
+            terminus -n env:delete --yes
+          fi
 
