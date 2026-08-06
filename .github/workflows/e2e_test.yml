@@ -29,8 +29,48 @@ env:
   BASE_BRANCH: ${{ github.base_ref }}
 
 jobs:
+  check_freshness:
+    name: Branch freshness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Deliberately the head branch rather than the pull_request merge ref
+          # that actions/checkout defaults to. The merge ref contains the base
+          # branch by construction, so checking it out would make this job
+          # vacuously pass.
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Verify the branch contains the tip of its base branch
+        run: |
+          # A push to qa or master has no base branch to compare against.
+          # Succeed so the jobs that need this one still run.
+          if [ -z "$BASE_BRANCH" ]; then
+            echo "Not a pull request; nothing to compare."
+            exit 0
+          fi
+          git fetch --no-tags origin "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
+          if git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD; then
+            echo "$CI_BRANCH contains the tip of $BASE_BRANCH."
+            exit 0
+          fi
+          # The site under test is built and deployed from the head branch,
+          # while Cypress runs the specs from the pull_request merge ref. A
+          # branch that is behind therefore runs specs added to the base branch
+          # since the last sync against a site built without the code those
+          # specs cover. The failures look like a regression in this pull
+          # request but are not, so stop here instead of spending 20 minutes
+          # producing a misleading red X.
+          BEHIND=$(git rev-list --count "HEAD..origin/$BASE_BRANCH")
+          echo "$CI_BRANCH is $BEHIND commit(s) behind $BASE_BRANCH:"
+          git log --oneline --no-decorate "HEAD..origin/$BASE_BRANCH"
+          echo "::error title=Branch is behind $BASE_BRANCH::$CI_BRANCH is $BEHIND commit(s) behind $BASE_BRANCH. Merge $BASE_BRANCH into it and push, then re-run all jobs. End-to-end tests are skipped until then because they would run the base branch's newest specs against a site built from this branch's older code."
+          exit 1
+
   prepare_pantheon:
     name: Prepare Pantheon
+    needs: check_freshness
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/uceap/devcontainer-drupal:main
