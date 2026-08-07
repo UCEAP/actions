@@ -53,9 +53,19 @@ jobs:
       - name: Build project for deployment
         run: composer -n install --no-dev --optimize-autoloader
       - name: Build theme for deployment
-        run: composer -n ci-compile-theme
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-theme([[:space:]]|$)'; then
+            composer -n ci-compile-theme
+          else
+            echo "No ci-compile-theme script defined in composer.json; skipping."
+          fi
       - name: Build React app(s) for deployment
-        run: composer -n ci-compile-react
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-react([[:space:]]|$)'; then
+            composer -n ci-compile-react
+          else
+            echo "No ci-compile-react script defined in composer.json; skipping."
+          fi
       - name: Build docs for deployment
         run: |
           if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-docs([[:space:]]|$)'; then
