@@ -27,6 +27,9 @@ on:
         required: true
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
+permissions:
+  contents: read
+  pull-requests: write
 defaults:
   run:
     shell: bash
@@ -50,9 +53,26 @@ jobs:
       - name: Build project for deployment
         run: composer -n install --no-dev --optimize-autoloader
       - name: Build theme for deployment
-        run: composer -n ci-compile-theme
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-theme([[:space:]]|$)'; then
+            composer -n ci-compile-theme
+          else
+            echo "No ci-compile-theme script defined in composer.json; skipping."
+          fi
       - name: Build React app(s) for deployment
-        run: composer -n ci-compile-react
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-react([[:space:]]|$)'; then
+            composer -n ci-compile-react
+          else
+            echo "No ci-compile-react script defined in composer.json; skipping."
+          fi
+      - name: Build docs for deployment
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-docs([[:space:]]|$)'; then
+            composer -n ci-compile-docs
+          else
+            echo "No ci-compile-docs script defined in composer.json; skipping."
+          fi
       - name: Remove files that should not be deployed
         run: |
           sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
@@ -232,8 +252,8 @@ jobs:
           set -e
           if [ $PANTHEON_SITE_EXISTS -eq 0 ]; then
             terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
-            curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
+            curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
               --request POST \
               --data '{"body": "Created feature testing environment at https://'$TERMINUS_ENV'-'$TERMINUS_SITE'.pantheonsite.io/"}' \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/$PR_NUMBER/comments"
