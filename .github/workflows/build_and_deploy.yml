@@ -57,7 +57,12 @@ jobs:
       - name: Build React app(s) for deployment
         run: composer -n ci-compile-react
       - name: Build docs for deployment
-        run: composer -n ci-compile-docs
+        run: |
+          if composer run-script --list | grep -qE '^[[:space:]]+ci-compile-docs([[:space:]]|$)'; then
+            composer -n ci-compile-docs
+          else
+            echo "No ci-compile-docs script defined in composer.json; skipping."
+          fi
       - name: Remove files that should not be deployed
         run: |
           sed -n '/# *:.*cut.*:/,$p' .gitignore > ../deploy.gitignore
