@@ -259,6 +259,59 @@ jobs:
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/$PR_NUMBER/comments"
           fi
 
+      # Put the multidev on the Jira ticket, so whoever tests the change finds
+      # it where the work is tracked. The ticket is the site's project key in
+      # the PR title (`UOS-134: …`) or, failing that, the branch
+      # (`UOS-134-keyboard-accessibility`); a PR naming neither is left alone.
+      # The URL is the link's global ID, so every push re-links the same
+      # environment rather than adding another. Nothing removes it when the
+      # multidev is cleaned up -- a dead link on a finished ticket is harmless.
+      # Visibility only: a Jira failure warns and never fails the build.
+      - name: Link the multidev from the Jira ticket
+        if: github.event.pull_request.number
+        continue-on-error: true
+        env:
+          JIRA_PROJECT_KEY: ${{ inputs.JIRA_PROJECT_KEY }}
+          JIRA_EMAIL: ${{ inputs.JIRA_EMAIL }}
+          TERMINUS_SITE: ${{ inputs.TERMINUS_SITE }}
+          # Through env, never interpolated into the script: a PR title is
+          # whatever its author typed.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! [[ "$JIRA_PROJECT_KEY" =~ ^[A-Z][A-Z0-9]*$ ]]; then
+            echo "::warning::JIRA_PROJECT_KEY '$JIRA_PROJECT_KEY' is not a Jira project key; not linking the multidev."
+            exit 0
+          fi
+
+          key=$(printf '%s\n%s\n' "$PR_TITLE" "$CI_BRANCH" \
+            | grep -oiE "\b${JIRA_PROJECT_KEY}-[0-9]+\b" | head -n1 | tr '[:lower:]' '[:upper:]' || true)
+          if [ -z "$key" ]; then
+            echo "No $JIRA_PROJECT_KEY ticket in the PR title or branch; nothing to link."
+            exit 0
+          fi
+
+          url="https://${TERMINUS_ENV}-${TERMINUS_SITE}.pantheonsite.io/"
+          payload=$(jq -n --arg url "$url" --arg env "$TERMINUS_ENV" '{
+            globalId: $url,
+            object: {
+              url: $url,
+              title: "Multidev \($env) (feature testing)",
+              icon: {url16x16: "https://pantheon.io/favicon.ico", title: "Pantheon"}
+            }
+          }')
+
+          status=$(curl -sS -o jira-response.json -w '%{http_code}' -X POST \
+            -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "https://uceapit.atlassian.net/rest/api/2/issue/$key/remotelink")
+
+          case "$status" in
+            200|201) echo "Linked $url from $key." ;;
+            401) echo "::warning::Jira did not accept JIRA_EMAIL ($JIRA_EMAIL) with the API token; the multidev was not linked from $key." ;;
+            *) echo "::warning::Could not link the multidev from $key (HTTP $status): $(head -c 300 jira-response.json)" ;;
+          esac
+
   deploy_to_pantheon:
     name: Deploy to Pantheon
     needs: [build_deployment, prepare_pantheon]
