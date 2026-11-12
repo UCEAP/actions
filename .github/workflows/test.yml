@@ -12,13 +12,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # Only the workflows these tests cover. build_and_deploy.yml and
-      # e2e_test.yml have pre-existing ShellCheck findings; add them here
-      # once they're cleaned up.
-      - name: Lint workflows (actionlint)
-        uses: docker://rhysd/actionlint:1.7.7
         with:
-          args: -color .github/workflows/sync_branches.yml .github/workflows/test.yml
+          fetch-depth: 0
+      # Lints only the workflows this PR (or push) adds or changes, so
+      # touching an existing workflow means fixing its findings too. Same
+      # practice as phpstan.feature.neon in our Drupal repos. If there is no
+      # usable base commit (e.g. a new branch), every workflow is linted.
+      - name: Lint changed workflows (actionlint)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          patterns=('.github/workflows/*.yml' '.github/workflows/*.yaml')
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2> /dev/null; then
+            base=$(git merge-base "$BASE_SHA" HEAD)
+            mapfile -t files < <(git diff --name-only --diff-filter=d "$base" HEAD -- "${patterns[@]}")
+          else
+            echo "No usable base commit; linting every workflow."
+            mapfile -t files < <(git ls-files -- "${patterns[@]}")
+          fi
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No workflow changes to lint."
+            exit 0
+          fi
+          printf 'Linting %s\n' "${files[@]}"
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color "${files[@]}"
       - name: Lint scripts (ShellCheck)
         run: shellcheck scripts/*.sh test/stubs/gh test/test_helper.bash
       - name: Unit tests (bats)

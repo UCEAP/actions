@@ -8,7 +8,7 @@
 npx --yes bats@1.11.1 test
 ```
 
-`.github/workflows/test.yml` runs these tests, ShellCheck and actionlint on every PR.
+`.github/workflows/test.yml` runs these tests and ShellCheck on every PR, and actionlint on the workflows each PR adds or changes. Touching an existing workflow means fixing its actionlint findings too.
 
 ## End-to-end check
 
