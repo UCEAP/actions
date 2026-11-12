@@ -1,0 +1,78 @@
+name: Sync branches
+# Opens (or updates) a PR that brings source_branch back into target_branch,
+# e.g. hotfixes on master back into qa. See README.md.
+on:
+  workflow_call:
+    inputs:
+      source_branch:
+        description: 'The branch to bring changes back from'
+        type: string
+        default: master
+      target_branch:
+        description: 'The branch to bring them into'
+        type: string
+        default: qa
+      auto_merge:
+        description: 'Turn on auto-merge (merge commit) for the sync PR'
+        type: boolean
+        default: false
+      label:
+        description: 'Label added to the sync PR'
+        type: string
+        default: sync
+      request_review:
+        description: 'Request a review from the person behind each hotfix'
+        type: boolean
+        default: true
+      actions_ref:
+        description: 'UCEAP/actions ref to load the script from (for testing changes)'
+        type: string
+        default: main
+    outputs:
+      outcome:
+        description: 'up-to-date, no-file-changes, created or updated'
+        value: ${{ jobs.sync.outputs.outcome }}
+      pr_number:
+        description: 'The sync PR number, if there is one'
+        value: ${{ jobs.sync.outputs.pr_number }}
+    secrets:
+      token:
+        description: 'Bot account token; GITHUB_TOKEN will not work (see README)'
+        required: true
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync ${{ inputs.source_branch }} into ${{ inputs.target_branch }}
+    runs-on: ubuntu-latest
+    # One run at a time per branch pair, so quick successive hotfixes can't
+    # open duplicate PRs. Queued runs are never cancelled mid-flight.
+    concurrency:
+      group: sync-branches-${{ github.repository }}-${{ inputs.source_branch }}-${{ inputs.target_branch }}
+      cancel-in-progress: false
+    outputs:
+      outcome: ${{ steps.sync.outputs.outcome }}
+      pr_number: ${{ steps.sync.outputs.pr_number }}
+    steps:
+      - name: Check out sync script
+        uses: actions/checkout@v4
+        with:
+          repository: UCEAP/actions
+          ref: ${{ inputs.actions_ref }}
+          path: .uceap-actions
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: Sync
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.token }}
+          REPO: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          LABEL: ${{ inputs.label }}
+          AUTO_MERGE: ${{ inputs.auto_merge }}
+          REQUEST_REVIEW: ${{ inputs.request_review }}
+          # Only a push to the source branch tells us which commits are new.
+          BEFORE_SHA: ${{ github.event_name == 'push' && github.ref_name == inputs.source_branch && github.event.before || '' }}
+        run: .uceap-actions/scripts/sync_branches.sh

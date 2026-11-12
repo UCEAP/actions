@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Fake `gh` for the bats tests.
+#
+# Every call is recorded in $GH_STUB_DIR/calls/<n> (arguments NUL-separated)
+# and appended to $GH_STUB_DIR/calls.log (arguments space-joined, one call per
+# line). Responses come from $GH_STUB_DIR/stubs, registered by `stub_gh` in
+# test_helper.bash: each stub is a glob matched against the space-joined
+# arguments; the most recently registered match wins. An unmatched call prints nothing and succeeds.
+set -u
+
+dir="${GH_STUB_DIR:?GH_STUB_DIR must be set}"
+mkdir -p "$dir/calls"
+n=$(find "$dir/calls" -type f | wc -l)
+n=$((n + 1))
+printf '%s\0' "$@" > "$dir/calls/$n"
+joined="$*"
+printf '%s\n' "${joined//$'\n'/ }" >> "$dir/calls.log"
+
+[ -d "$dir/stubs" ] || exit 0
+for stub in $(find "$dir/stubs" -name '*.pattern' | sort -r); do
+  base="${stub%.pattern}"
+  pattern=$(cat "$stub")
+  # shellcheck disable=SC2053 # glob match is intended
+  if [[ "$joined" == $pattern ]]; then
+    [ -f "$base.out" ] && cat "$base.out"
+    [ -f "$base.err" ] && cat "$base.err" >&2
+    exit "$(cat "$base.exit" 2>/dev/null || echo 0)"
+  fi
+done
+exit 0
