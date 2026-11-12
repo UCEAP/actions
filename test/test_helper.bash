@@ -1,5 +1,7 @@
+# shellcheck shell=bash
 # Shared setup and helpers for the sync_branches tests.
 
+# shellcheck disable=SC2034 # used by sync_branches.bats
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/sync_branches.sh"
 
 setup() {

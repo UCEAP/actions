@@ -132,6 +132,22 @@ load test_helper
   gh_not_called 'pr edit * --add-reviewer *dave*'
 }
 
+@test "ignores unmerged PRs into the source branch" {
+  stub_compare "$(compare_json 1 1 "$(commit_json aaa111 alice)")"
+  # The commit is also in someone else's still-open PR into master.
+  stub_gh "api repos/$REPO/commits/aaa111/pulls" \
+    "$(jq -sc 'add' <(pulls_json 95 dave User master false) <(pulls_json 101 alice))"
+  stub_no_open_pr
+  stub_created_pr 500
+  stub_mergeable MERGEABLE
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  body=$(gh_arg 'pr create *' --body)
+  [[ "$body" == *"#101"* ]]
+  [[ "$body" != *"#95"* ]]
+  [ "$(gh_arg 'pr edit 500 *' --add-reviewer)" = "alice" ]
+}
+
 # --- 3. Reuse the open sync PR -------------------------------------------------------
 
 @test "reuses the open sync PR instead of opening another" {

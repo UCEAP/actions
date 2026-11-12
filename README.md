@@ -42,7 +42,7 @@ The `push` trigger runs from the workflow file in the pushed commit, so it only 
 
 | Secret | Description |
 |---|---|
-| `token` | **Required.** A token for a bot account (we use `uceap-bot` via `BUILD_BOT_PAT`) with `contents: read` and `pull_requests: write` on the repo. |
+| `token` | **Required.** A token for a bot account (we use `uceap-bot` via `BUILD_BOT_PAT`) with `contents: read`, `pull_requests: write` and `issues: write` (for labels) on the repo. A classic token with the `repo` scope covers all three. |
 
 The built-in `GITHUB_TOKEN` won't work. GitHub doesn't run `pull_request` workflows for PRs opened with `GITHUB_TOKEN`, so the target branch's required status checks would never report and the PR could never merge. Using a bot account also means the bot is the PR author, so any developer can approve it.
 
