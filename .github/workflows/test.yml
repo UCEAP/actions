@@ -1,0 +1,22 @@
+name: Test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Lint workflows (actionlint)
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
+      - name: Lint scripts (ShellCheck)
+        run: shellcheck scripts/*.sh test/stubs/gh test/test_helper.bash
+      - name: Unit tests (bats)
+        run: npx --yes bats@1.11.1 test
