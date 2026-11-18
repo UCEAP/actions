@@ -89,11 +89,18 @@ jobs:
           TERMINUS_ENV: ${{ inputs.TERMINUS_ENV }}
         run: |
           terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
-          set +e
-          terminus -n env:info --quiet; PANTHEON_SITE_EXISTS=$((!$?))
-          set -e
-          if [ $PANTHEON_SITE_EXISTS -ne 0 ]; then
-            terminus -n env:delete --yes
+          # multidev:create reuses an existing Git branch of the same name, code
+          # and all, and only copies the database and files from dev. A branch
+          # left behind would run its stale code against dev's database, so the
+          # branch goes with the environment.
+          if terminus -n env:info --quiet; then
+            terminus -n multidev:delete --delete-branch --yes
+          elif terminus -n branch:list "$TERMINUS_SITE" --format=list --field=id | grep -qx "$TERMINUS_ENV"; then
+            # A branch without its environment, left by an older cleanup that
+            # did not delete branches. Terminus only deletes a branch along
+            # with a multidev, so give it one to delete.
+            terminus -n multidev:create "$TERMINUS_SITE.dev" "$TERMINUS_ENV" --no-db --no-files
+            terminus -n multidev:delete --delete-branch --yes
           fi
           terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
           terminus multidev:create $TERMINUS_SITE.dev $TERMINUS_ENV
@@ -184,11 +191,12 @@ jobs:
           terminus -n auth:login --machine-token="$TERMINUS_TOKEN"
           # Guard the delete: with `if: always()` this job also runs when
           # prepare_pantheon failed and never created the multidev, in which
-          # case env:delete would error and turn cleanup red for no reason.
+          # case the delete would error and turn cleanup red for no reason.
+          # The branch goes too: see "Create Pantheon environment" above.
           set +e
           terminus -n env:info --quiet; PANTHEON_SITE_EXISTS=$((!$?))
           set -e
           if [ $PANTHEON_SITE_EXISTS -ne 0 ]; then
-            terminus -n env:delete --yes
+            terminus -n multidev:delete --delete-branch --yes
           fi
 
